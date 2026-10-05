@@ -1,0 +1,4 @@
+# Never commit LinkedIn exports or other personal data
+*.csv
+*.zip
+Basic_LinkedInDataExport*/
