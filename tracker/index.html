@@ -227,8 +227,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 (() => {
   // ---------- Reference data ----------
   const FNS = [
-    ["lending", "Lenders"], ["capmkts", "Capital markets"], ["sales", "Investment sales"], ["leasing", "Leasing"],
-    ["development", "Development"], ["acquisitions", "Acquisitions"], ["law", "Legal"], ["am", "Asset mgmt"],
+    ["lending", "Lenders"], ["capmkts", "Capital markets"], ["sales", "Brokerage"], ["leasing", "Leasing"],
+    ["development", "Development"], ["acquisitions", "Acquisitions"], ["owners", "Owners & sponsors"], ["law", "Legal"], ["am", "Asset mgmt"],
     ["investors", "Investors & IR"], ["recruiters", "Recruiters"], ["pm", "Property ops"], ["other", "Other"],
   ];
   const FN = Object.fromEntries(FNS);
@@ -301,19 +301,26 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   }
 
   // ---------- Classification ----------
+  const BROKER_FIRMS = /\b(jll|cbre|cushman|newmark|colliers|avison young|marcus (&|and) millichap|institutional property advisors|\bipa\b|greysteel|transwestern|lee (&|and) associates|\bnai\b|stream realty|holt lunsford|knight commercial|thirty-four commercial|bradford|matthews real estate|savills|kidder mathews|partners real estate|younger partners|structure commercial|cohera commercial|commercial realty|commercial properties)\b/;
+  const LENDER_FIRMS = /\b(wells fargo|j\.?p\.? ?morgan|chase|bank of america|citi(bank|group)?|truist|pnc|frost|comerica|texas capital|regions|capital one|goldman sachs|morgan stanley|freddie mac|fannie mae|bellwether enterprise|arbor realty|ready capital|lument|kkr real estate finance|starwood property trust|ladder capital|prudential mortgage|pgim real estate|life insurance|mutual of omaha)\b/;
+  const OWNER_FIRMS = /real estate|realty|properties|property group|residential|communities|apartment|multifamily|\breit\b|\bhomes\b|land company|s2 capital|compatriot|northpoint|montgomery street|calida|related companies|blue owl|carlyle|blackstone|starwood|brookfield|cortland|bell partners|camden|\bmaa\b|hines|trammell crow|lincoln property|nuveen|principal asset management|invesco|clarion|harbor group|crow holdings|hillwood|stillwater capital|hudson advisors|maymont|cypress growth|\bcapital\b|\binvestments?\b|\bindustrial\b/;
+  const SENIOR_GENERIC = /\b(associate|analyst|vice president|vp|svp|evp|director|managing director|principal|partner|president|vice chair|chairman|founder|ceo|chief|executive)\b/;
+  const NOT_RE_ROLE = /engineer|software|developer\b|technolog|\bit\b|marketing|human resources|\bhr\b|recruit|accountant|accounting|payroll|designer|nurse|teacher|educator|intern\b/;
   function classify(position, company) {
     const p = (position || "").toLowerCase(), c = (company || "").toLowerCase(), s = p + " | " + c;
-    if (/\b(attorney|counsel|lawyer|paralegal|legal)\b/.test(p) || (/\b(llp|pllc|law|p\.?c\.?)$|\b(llp|pllc|law)\b/.test(c) && /partner|associate|counsel|shareholder/.test(p))) return "law";
-    if (/recruit|talent acquisition|executive search|headhunt/.test(s) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors/.test(c)) return "recruiters";
+    if (!/assurance|audit|\btax\b|accountant/.test(p) && (/\b(attorney|counsel|lawyer|paralegal|legal)\b/.test(s) || /\blaw\b/.test(p) || (/\b(llp|pllc|law|p\.?c\.?)$|\b(llp|pllc|law)\b/.test(c) && /partner|associate|counsel|shareholder/.test(p)))) return "law";
+    if (/recruit|talent|executive search|headhunt|staffing|\bsearch partners\b/.test(s) || /\bsearch\b/.test(c) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors|hirewell|\bgpac\b|options group/.test(c)) return "recruiters";
     if (/capital markets|debt (&|and) equity|debt placement|equity placement|structured finance|mortgage bank/.test(s) || /walker ?(&|and) ?dunlop|berkadia|eastdil|northmarq|greystone|hff\b/.test(c)) return "capmkts";
     if (/leasing consultant|leasing professional|leasing agent|community manag|property manag|regional manag|regional property|maintenance|\bresident\b/.test(p)) return "pm";
-    if (/\b(lend|lending|lender|loan|loans|originat\w*|credit|underwrit\w*|banker|relationship manager)\b/.test(p) || /\bbank\b|bancorp|credit union|debt fund|lending|life insurance/.test(c)) return "lending";
+    if (/\b(lend|lending|lender|loan|loans|originat\w*|credit|underwrit\w*|banker|banking|relationship manager)\b/.test(p) || ((/\bbank\b|bancorp|credit union|debt fund|lending/.test(c) || LENDER_FIRMS.test(c)) && !NOT_RE_ROLE.test(p))) return "lending";
+    if (/real estate|mortgage/.test(p) && /insurance|financial services|\blife\b|principal financial|athene/.test(c)) return "lending";
     if (/leasing|tenant rep|tenant representation|landlord rep|agency leas/.test(p)) return "leasing";
-    if (/investment sales|multifamily advisory|institutional property advisors|marcus ?(&|and) ?millichap|\bbroker\b|brokerage/.test(s)) return "sales";
-    if (/acquisition|transactions|\binvestments\b|investment (associate|analyst|manager|officer|director)/.test(p)) return "acquisitions";
-    if (/develop|construction|pre-?construction|estimator|superintendent|architect|general contractor/.test(s)) return "development";
-    if (/asset manag|portfolio manag/.test(p)) return "am";
+    if (/investment sales|multifamily advisory|real estate advisor|\bbroker\b|brokerage|\bagent\b/.test(p) || /institutional property advisors|marcus ?(&|and) ?millichap/.test(c) || (BROKER_FIRMS.test(c) && !NOT_RE_ROLE.test(p) && !/asset manag|portfolio manag|valuation/.test(p))) return "sales";
+    if (/asset manag|portfolio manag|investment management/.test(p)) return "am";
+    if (/acquisition|acquistion|transactions|\binvestments?\b|\breal estate\b.*\b(associate|analyst)\b|\b(associate|analyst)\b.*\breal estate\b|m&a/.test(p)) return "acquisitions";
+    if (/develop|construction|pre-?construction|estimator|superintendent|architect|general contractor|contracting|builders/.test(s) && !NOT_RE_ROLE.test(p) && !/business develop|player develop|program|process|product develop/.test(p)) return "development";
     if (/investor relations|capital rais|fundrais|limited partner|pension|endowment|family office/.test(s)) return "investors";
+    if (OWNER_FIRMS.test(c) && SENIOR_GENERIC.test(p) && !NOT_RE_ROLE.test(p)) return "owners";
     if (/operations|\bops\b/.test(p)) return "pm";
     return "other";
   }
