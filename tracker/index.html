@@ -241,6 +241,21 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   const TOUCH_TYPES = [["lunch", "Lunch"], ["coffee", "Coffee"], ["call", "Call"], ["meeting", "Meeting"], ["event", "Event"], ["note", "Note / email"]];
   const TOUCH = Object.fromEntries(TOUCH_TYPES);
   const CONVO = new Set(["lunch", "coffee", "call", "meeting"]);
+  const REGIONS = [["dfw", "DFW"], ["texas", "Texas, other"], ["elsewhere", "Elsewhere"], ["unknown", "Unknown"]];
+  const REGION = Object.fromEntries(REGIONS);
+  const LEVELS = [["exec", "MD, partner, C-suite"], ["senior", "Director, VP"], ["mid", "Manager, associate"], ["early", "Analyst, early career"], ["unknown", "No title"]];
+  const LEVEL = Object.fromEntries(LEVELS);
+  const STRENGTHS = [["", "Not set"], ["close", "Close"], ["know", "Know well"], ["met", "Met once or twice"], ["never", "Never met"]];
+  const STRENGTH = Object.fromEntries(STRENGTHS);
+  const DFW_TEXT = /\b(dallas|dfw|fort worth|ft\.? worth|plano|frisco|irving|addison|las colinas|richardson|mckinney|southlake)\b/i;
+  const TX_TEXT = /\b(texas|houston|austin|san antonio|tx)\b/i;
+  // Firms headquartered in DFW. National firms are left out: their people could be anywhere.
+  const DFW_FIRMS = /\b(bank of texas|civitas capital|creda dfw|d\.?r\.? horton|delta dallas|granite properties|highland homes|hillwood|holt lunsford|knightvest|compatriot capital|lincoln property|stillwater capital|stream realty|structure commercial|younger partners|the real estate council|skorburg|velocis|pegasusablon|rreaf|srs real estate partners|willow bridge|cyrusone|baylor scott)\b/i;
+  const FN_WEIGHT = { lending: 3, capmkts: 3, am: 3, sales: 2, owners: 2, acquisitions: 2, development: 2, law: 2, investors: 2, leasing: 2, recruiters: 1, pm: 1, other: -3 };
+  const LEVEL_PTS = { exec: 3, senior: 2, mid: 1, early: 0, unknown: 0 };
+  const STRENGTH_PTS = { close: 4, know: 3, met: 1, never: -1, "": 0 };
+  const SORTS = [["fit", "Best fit first"], ["tier", "Tier"], ["level", "Most senior"], ["recent", "Recently connected"], ["name", "Name"]];
+  const DEFAULT_FILTERS = { q: "", side: "", fn: "", tier: "active", region: "", level: "", strength: "", sort: "tier" };
   const WIN_STATUS = [["idea", "Idea"], ["active", "In progress"], ["done", "Done"]];
   const WIN_AREAS = [["refi", "Refinance / debt"], ["holdsell", "Hold / sell"], ["leasing", "Leasing"], ["turnaround", "Asset turnaround"], ["investors", "Investors / IC"], ["budget", "Budget & business plan"], ["team", "Team"], ["other", "Other"]];
   const WIN_AREA = Object.fromEntries(WIN_AREAS);
@@ -260,8 +275,9 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     settings: { firm: "", weeklyTarget: 3, targetDate: "2027-12-15" },
     loaded: false,
     dbState: "connecting", // connecting | ready | none | readonly
-    filters: { q: "", side: "", fn: "", tier: "active" },
+    filters: { ...DEFAULT_FILTERS },
     triageFn: "",
+    tri: { region: "", level: "", side: "", sort: "fit" },
     limit: 120,
     open: null,
     importing: null,
@@ -309,7 +325,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   function classify(position, company) {
     const p = (position || "").toLowerCase(), c = (company || "").toLowerCase(), s = p + " | " + c;
     if (!/assurance|audit|\btax\b|accountant/.test(p) && (/\b(attorney|counsel|lawyer|paralegal|legal)\b/.test(s) || /\blaw\b/.test(p) || (/\b(llp|pllc|law|p\.?c\.?)$|\b(llp|pllc|law)\b/.test(c) && /partner|associate|counsel|shareholder/.test(p)))) return "law";
-    if (/recruit|talent|executive search|headhunt|staffing|\bsearch partners\b/.test(s) || /\bsearch\b/.test(c) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors|hirewell|\bgpac\b|options group/.test(c)) return "recruiters";
+    if (/recruit|talent|executive search|headhunt|staffing|\bsearch partners\b/.test(s) || /\bsearch\b/.test(c) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors|hirewell|\bgpac\b|options group|selby jennings|michael page|kforce|teksystems|insight global/.test(c)) return "recruiters";
     if (/capital markets|debt (&|and) equity|debt placement|equity placement|structured finance|mortgage bank/.test(s) || /walker ?(&|and) ?dunlop|berkadia|eastdil|northmarq|greystone|hff\b/.test(c)) return "capmkts";
     if (/leasing consultant|leasing professional|leasing agent|community manag|property manag|regional manag|regional property|maintenance|\bresident\b/.test(p)) return "pm";
     if (/\b(lend|lending|lender|loan|loans|originat\w*|credit|underwrit\w*|banker|banking|relationship manager)\b/.test(p) || ((/\bbank\b|bancorp|credit union|debt fund|lending/.test(c) || LENDER_FIRMS.test(c)) && !NOT_RE_ROLE.test(p))) return "lending";
@@ -327,6 +343,57 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   const isInternal = (company) => { const f = (S.settings.firm || "").trim().toLowerCase(); return !!f && (company || "").toLowerCase().includes(f); };
 
   // ---------- Derived ----------
+  function regionOf(c) {
+    if (c.region) return c.region;
+    const s = `${c.position || ""} ${c.company || ""}`;
+    if (DFW_TEXT.test(s) || DFW_FIRMS.test(c.company || "")) return "dfw";
+    if (TX_TEXT.test(s)) return "texas";
+    return "unknown";
+  }
+  function levelOf(c) {
+    const p = (c.position || "").toLowerCase();
+    if (!p.trim()) return "unknown";
+    if (/\b(intern|student|candidate)\b/.test(p)) return "early";
+    if (/\banalyst\b/.test(p) && !/\b(senior|sr\.?|lead|principal|director|manager|vp|vice president)\b/.test(p)) return "early";
+    if (/\b(assistant|coordinator)\b/.test(p) && !/\b(director|manager|vp|vice president)\b/.test(p)) return "early";
+    if (/senior vice president|executive vice president|\b(svp|evp|sr\.? vice president)\b/.test(p)) return "exec";
+    const r = p.replace(/(assistant|associate|first) vice president|vice president/g, " vp ").replace(/(acquisition|business|hr|people) partner/g, " ");
+    if (/\b(managing director|managing partner|partner|principal|chief|ceo|cfo|coo|cio|cto|president|founder|co-founder|owner|chair|chairman|vice chair|head of)\b/.test(r)) return "exec";
+    if (/\b(director|vp|avp|head)\b/.test(r)) return "senior";
+    return "mid";
+  }
+  function fitScore(c) {
+    const r = regionOf(c), lv = levelOf(c);
+    let s = (FN_WEIGHT[c.fn] ?? 0) + LEVEL_PTS[lv] * 1.5 + (STRENGTH_PTS[c.strength || ""] || 0);
+    if (r === "dfw") s += 3; else if (r === "texas") s += 1;
+    if (c.side === "internal") s += (["am", "acquisitions", "capmkts", "investors"].includes(c.fn) || lv === "exec") ? 3 : 1;
+    return s;
+  }
+  const connTs = (c) => Date.parse(c.connectedOn || "") || 0;
+  function applyFilters(list, f) {
+    if (f.side) list = list.filter((c) => c.side === f.side);
+    if (f.fn) list = list.filter((c) => c.fn === f.fn);
+    if (f.region) list = list.filter((c) => regionOf(c) === f.region);
+    if (f.level === "senior+") list = list.filter((c) => ["exec", "senior"].includes(levelOf(c)));
+    else if (f.level) list = list.filter((c) => levelOf(c) === f.level);
+    if (f.strength === "any") list = list.filter((c) => c.strength && c.strength !== "never");
+    else if (f.strength) list = list.filter((c) => (c.strength || "") === f.strength);
+    return list;
+  }
+  function sortList(list, how) {
+    const rank = { inner: 0, core: 1, wide: 2, none: 3, skip: 4 };
+    const byName = (a, b) => fullName(a).localeCompare(fullName(b));
+    if (how === "fit") { const m = new Map(list.map((c) => [c.id, fitScore(c)])); return list.sort((a, b) => (m.get(b.id) - m.get(a.id)) || byName(a, b)); }
+    if (how === "level") return list.sort((a, b) => (LEVEL_PTS[levelOf(b)] - LEVEL_PTS[levelOf(a)]) || byName(a, b));
+    if (how === "recent") return list.sort((a, b) => (connTs(b) - connTs(a)) || byName(a, b));
+    if (how === "name") return list.sort(byName);
+    return list.sort((a, b) => (rank[a.tier || "none"] - rank[b.tier || "none"]) || byName(a, b));
+  }
+  const filterSelects = (pre, f, withStrength) => `
+        <select id="${pre}-region" aria-label="Region">${opts([["", "All regions"], ...REGIONS], f.region)}</select>
+        <select id="${pre}-level" aria-label="Seniority">${opts([["", "All levels"], ["senior+", "Director / VP and up"], ...LEVELS], f.level)}</select>
+        ${withStrength ? `<select id="${pre}-strength" aria-label="How well you know them">${opts([["", "Any relationship"], ["any", "Met or closer"], ...STRENGTHS.filter(([k]) => k)], f.strength)}</select>` : ""}
+        <select id="${pre}-sort" aria-label="Sort">${opts(SORTS.filter(([k]) => pre === "f" || k !== "tier"), f.sort)}</select>`;
   function nextDue(c) {
     const days = CADENCE[c.tier]; if (!days) return null;
     return c.lastTouch ? addDays(c.lastTouch, days) : today();
@@ -519,15 +586,13 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   }
 
   function filteredPeople() {
-    const { q, side, fn, tier } = S.filters; const qq = q.trim().toLowerCase();
+    const f = S.filters; const qq = f.q.trim().toLowerCase();
     let list = [...S.contacts.values()];
-    if (tier === "active") list = list.filter((c) => CADENCE[c.tier]);
-    else if (tier) list = list.filter((c) => (c.tier || "none") === tier);
-    if (side) list = list.filter((c) => c.side === side);
-    if (fn) list = list.filter((c) => c.fn === fn);
+    if (f.tier === "active") list = list.filter((c) => CADENCE[c.tier]);
+    else if (f.tier) list = list.filter((c) => (c.tier || "none") === f.tier);
+    list = applyFilters(list, f);
     if (qq) list = list.filter((c) => `${fullName(c)} ${c.company || ""} ${c.position || ""} ${c.notes || ""}`.toLowerCase().includes(qq));
-    const rank = { inner: 0, core: 1, wide: 2, none: 3, skip: 4 };
-    return list.sort((a, b) => (rank[a.tier || "none"] - rank[b.tier || "none"]) || fullName(a).localeCompare(fullName(b)));
+    return sortList(list, f.sort);
   }
   function viewPeople() {
     const list = filteredPeople();
@@ -537,6 +602,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
         <select id="f-tier" aria-label="Tier">${opts([["active", "Inner, core & wide"], ["", "Everyone"], ...TIERS], S.filters.tier)}</select>
         <select id="f-side" aria-label="Internal or external">${opts([["", "Internal & external"], ["internal", "Internal"], ["external", "External"]], S.filters.side)}</select>
         <select id="f-fn" aria-label="Function">${opts([["", "All functions"], ...FNS], S.filters.fn)}</select>
+        ${filterSelects("f", S.filters, true)}
+        ${JSON.stringify(S.filters) !== JSON.stringify(DEFAULT_FILTERS) ? `<button class="btn ghost" data-action="reset-filters">Clear</button>` : ""}
         <button class="btn" data-action="new-contact">${ICON.plus} Add</button>
       </div>
       <p class="hint" style="margin:0 0 10px"><span class="num">${list.length}</span> ${list.length === 1 ? "person" : "people"}</p>
@@ -549,8 +616,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     let list = [...S.contacts.values()].filter((c) => (c.tier || "none") === "none");
     const counts = {}; list.forEach((c) => (counts[c.fn] = (counts[c.fn] || 0) + 1));
     if (S.triageFn) list = list.filter((c) => c.fn === S.triageFn);
-    const order = Object.fromEntries(FNS.map(([k], i) => [k, i]));
-    list.sort((a, b) => (order[a.fn] - order[b.fn]) || fullName(a).localeCompare(fullName(b)));
+    list = sortList(applyFilters(list, S.tri), S.tri.sort);
     const tiered = active().length;
     return `<section>
       <div class="sec-head"><div><h2 class="lede" style="font-size:24px">Sort the people who matter.</h2>
@@ -560,9 +626,15 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
         <button class="cov ${!S.triageFn ? "on" : ""}" data-tfn="">All</button>
         ${FNS.filter(([k]) => counts[k]).map(([k, l]) => `<button class="cov ${S.triageFn === k ? "on" : ""}" data-tfn="${k}">${esc(l)} <span class="n">${counts[k]}</span></button>`).join("")}
       </div>
+      <div class="filters">
+        <select id="t-side" aria-label="Internal or external">${opts([["", "Internal & external"], ["internal", "Internal"], ["external", "External"]], S.tri.side)}</select>
+        ${filterSelects("t", S.tri, false)}
+        <span class="hint num" style="align-self:center">${list.length} shown</span>
+      </div>
       <div class="list">${list.length ? list.slice(0, S.limit).map((c) => `<div class="row" data-id="${esc(c.id)}">
           <div class="who" data-open="${esc(c.id)}" style="cursor:pointer"><div class="name">${esc(fullName(c))}${c.side === "internal" ? ' <span class="pill int">Internal</span>' : ""}</div><div class="meta">${esc([c.position, c.company].filter(Boolean).join(" · ") || "No title on file")}</div></div>
           <div class="side">
+            <button class="pill ${regionOf(c) === "dfw" ? "inner" : ""}" data-dfw="${esc(c.id)}" aria-pressed="${regionOf(c) === "dfw"}" title="Mark as DFW" style="cursor:pointer">DFW</button>
             <select data-tfnset="${esc(c.id)}" aria-label="Function for ${esc(fullName(c))}">${opts(FNS, c.fn)}</select>
             <div class="seg" role="group" aria-label="Tier">${["inner", "core", "wide", "skip"].map((t) => `<button data-tier="${t}" data-cid="${esc(c.id)}">${t === "skip" ? "Not now" : TIER[t].replace(" circle", "")}</button>`).join("")}</div>
           </div></div>`).join("") : `<div class="empty"><span class="serif">${S.contacts.size ? "Everyone's sorted." : "Nothing to sort yet."}</span>${S.contacts.size ? "New imports will show up here." : "Import your LinkedIn connections first."}</div>`}</div>
@@ -652,7 +724,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     d.innerHTML = `<div class="dhead"><div style="min-width:0">
         <h2>${esc(fullName(c))}</h2>
         <div class="sub">${esc([c.position, c.company].filter(Boolean).join(" · ") || "No title on file")}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${tierPill(c)}${i ? `<span class="pill ${i.cls}">${esc(i.label)}</span>` : ""}${c.connectedOn ? `<span class="pill">Connected ${esc(c.connectedOn)}</span>` : ""}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${tierPill(c)}<span class="pill">${esc(LEVEL[levelOf(c)])}</span>${i ? `<span class="pill ${i.cls}">${esc(i.label)}</span>` : ""}${c.connectedOn ? `<span class="pill">Connected ${esc(c.connectedOn)}</span>` : ""}</div>
       </div><button class="btn ghost dclose" data-action="close" aria-label="Close">${ICON.x}</button></div>
       <div class="stack">
         ${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener" class="btn sm" style="align-self:flex-start;text-decoration:none">${ICON.ext} LinkedIn profile</a>` : ""}
@@ -666,6 +738,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
           <label class="f">Function<select data-c="fn">${opts(FNS, c.fn)}</select></label>
           <label class="f">Internal or external<select data-c="side">${opts([["external", "External"], ["internal", "Internal"]], c.side || "external")}</select></label>
           <label class="f">Role in your promotion<select data-c="role">${opts(ROLES, c.role || "")}</select></label>
+          <label class="f">Region<select data-c="region">${opts([["", `Auto: ${REGION[regionOf({ ...c, region: "" })]}`], ...REGIONS], c.region || "")}</select></label>
+          <label class="f">How well you know them<select data-c="strength">${opts(STRENGTHS, c.strength || "")}</select></label>
         </div>
         <label class="f">Linked win<select data-c="winId">${opts([["", "None"], ...S.wins.map((w) => [w.id, w.title])], c.winId || "")}</select></label>
         <label class="f">What they care about<textarea data-c="cares" placeholder="Their deals, their problems, what they're trying to get done">${esc(c.cares || "")}</textarea></label>
@@ -795,7 +869,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 
   // ---------- Events ----------
   document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-tab],[data-open],[data-action],[data-tier],[data-tfn],[data-cov],[data-delwin],[data-deltouch]");
+    const el = e.target.closest("[data-tab],[data-open],[data-action],[data-tier],[data-tfn],[data-cov],[data-delwin],[data-deltouch],[data-dfw]");
     if (!el) { if (e.target.id === "scrim") closeDrawer(); return; }
     if (el.dataset.tier && el.dataset.cid) {
       const c = S.contacts.get(el.dataset.cid);
@@ -806,7 +880,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     if (el.dataset.tab) { if (S.open) closeDrawer(); setTab(el.dataset.tab); return; }
     if (el.dataset.open) { openDrawer(el.dataset.open); return; }
     if (el.dataset.tfn !== undefined) { S.triageFn = el.dataset.tfn; S.limit = 120; render(); return; }
-    if (el.dataset.cov) { S.filters = { q: "", side: "external", fn: el.dataset.cov, tier: "" }; setTab("people"); return; }
+    if (el.dataset.cov) { S.filters = { ...DEFAULT_FILTERS, side: "external", fn: el.dataset.cov, tier: "" }; setTab("people"); return; }
+    if (el.dataset.dfw) { const c = S.contacts.get(el.dataset.dfw); const on = regionOf(c) === "dfw"; saveContact(c.id, { region: on ? "unknown" : "dfw" }); render(); return; }
     if (el.dataset.delwin) {
       const id = el.dataset.delwin;
       if (el.dataset.confirm) { S.wins = S.wins.filter((w) => w.id !== id); deleteDoc("wins/" + id); for (const c of S.contacts.values()) if (c.winId === id) saveContact(c.id, { winId: "" }); render(); }
@@ -819,6 +894,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     else if (a === "new-contact") newContact();
     else if (a === "new-win") newWin();
     else if (a === "more") { S.limit += 200; render(); }
+    else if (a === "reset-filters") { S.filters = { ...DEFAULT_FILTERS }; render(); }
     else if (a === "add-touch") addTouch();
     else if (a === "ask-delete") {
       $("#del-wrap").innerHTML = `<span class="hint">Delete ${esc(fullName(S.contacts.get(S.open)))} and their history?</span><button class="btn sm" data-action="cancel-delete">Keep</button><button class="btn sm danger" data-action="confirm-delete">Delete</button>`;
@@ -844,7 +920,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   });
   document.addEventListener("change", (e) => {
     const t = e.target;
-    if (t.id === "f-tier" || t.id === "f-side" || t.id === "f-fn") { S.filters[t.id.slice(2)] = t.value; S.limit = 120; render(); return; }
+    if (/^f-(tier|side|fn|region|level|strength|sort)$/.test(t.id)) { S.filters[t.id.slice(2)] = t.value; S.limit = 120; render(); return; }
+    if (/^t-(side|region|level|sort)$/.test(t.id)) { S.tri[t.id.slice(2)] = t.value; S.limit = 120; render(); return; }
     if (t.dataset.c && S.open && t.tagName === "SELECT") {
       const patch = { [t.dataset.c]: t.value }; if (t.dataset.c === "fn") patch.fnAuto = false;
       saveContact(S.open, patch); renderDrawer(); return;
