@@ -193,6 +193,11 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 .ms.done .t { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
 .ms.late .d { color: var(--crit); }
 
+.lessons { display: flex; flex-direction: column; gap: 10px; }
+.lesson { border-top: 1px solid var(--line); padding-top: 9px; font-size: 14px; overflow-wrap: anywhere; }
+.lesson .by { color: var(--muted); font-size: 12.5px; margin-bottom: 2px; }
+.lesson .by button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
+.qgroup + .qgroup { margin-top: 26px; }
 .drop { border: 1.5px dashed var(--faint); border-radius: var(--r); padding: 28px 20px; text-align: center; background: var(--surface); transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
 .drop.over { border-color: var(--accent); background: var(--accent-soft); }
 .steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); }
@@ -214,7 +219,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
       <div class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i></div>
       <span class="wordmark">Networker</span>
     </div>
-    <div class="goal" id="goal">Goal: <b>Director of Asset Management</b></div>
+    <div class="goal" id="goal">Goal: <b>Learn the business from every seat</b></div>
   </header>
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <main id="main"></main>
@@ -251,7 +256,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   const TX_TEXT = /\b(texas|houston|austin|san antonio|tx)\b/i;
   // Firms headquartered in DFW. National firms are left out: their people could be anywhere.
   const DFW_FIRMS = /\b(bank of texas|civitas capital|creda dfw|d\.?r\.? horton|delta dallas|granite properties|highland homes|hillwood|holt lunsford|knightvest|compatriot capital|lincoln property|stillwater capital|stream realty|structure commercial|younger partners|the real estate council|skorburg|velocis|pegasusablon|rreaf|srs real estate partners|willow bridge|cyrusone|baylor scott)\b/i;
-  const FN_WEIGHT = { lending: 3, capmkts: 3, am: 3, sales: 2, owners: 2, acquisitions: 2, development: 2, law: 2, investors: 2, leasing: 2, recruiters: 1, pm: 1, other: -3 };
+  const FN_WEIGHT = { lending: 3, capmkts: 3, am: 2.5, sales: 2.5, leasing: 2.5, development: 2.5, law: 2.5, investors: 2.5, owners: 2, acquisitions: 2, recruiters: 1.5, pm: 1.5, other: -3 };
   const LEVEL_PTS = { exec: 3, senior: 2, mid: 1, early: 0, unknown: 0 };
   const STRENGTH_PTS = { close: 4, know: 3, met: 1, never: -1, "": 0 };
   const SORTS = [["fit", "Best fit first"], ["tier", "Tier"], ["level", "Most senior"], ["recent", "Recently connected"], ["name", "Name"]];
@@ -259,6 +264,13 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   const WIN_STATUS = [["idea", "Idea"], ["active", "In progress"], ["done", "Done"]];
   const WIN_AREAS = [["refi", "Refinance / debt"], ["holdsell", "Hold / sell"], ["leasing", "Leasing"], ["turnaround", "Asset turnaround"], ["investors", "Investors / IC"], ["budget", "Budget & business plan"], ["team", "Team"], ["other", "Other"]];
   const WIN_AREA = Object.fromEntries(WIN_AREAS);
+  const LEARN_PHASES = {
+    1: ["Debt & capital markets", "Oct – Dec 2026", "2026-10", "2026-12"],
+    2: ["Leasing & operations", "Jan – Mar 2027", "2027-01", "2027-03"],
+    3: ["Development & construction", "Apr – Jun 2027", "2027-04", "2027-06"],
+    4: ["Transactions & valuation", "Jul – Sep 2027", "2027-07", "2027-09"],
+  };
+  const DEFAULT_GOAL = "Learn the business from every seat";
   const PHASES = {
     1: ["Get the criteria", "Oct – Dec 2026", "2026-10", "2026-12"],
     2: ["Deliver director-level wins", "Jan – Jun 2027", "2027-01", "2027-06"],
@@ -272,7 +284,9 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     contacts: new Map(),
     wins: [],
     milestones: [],
-    settings: { firm: "", weeklyTarget: 3, targetDate: "2027-12-15" },
+    settings: { firm: "", weeklyTarget: 3, targetDate: "2027-12-15", goal: "" },
+    questions: [],
+    planTrack: "learning",
     loaded: false,
     dbState: "connecting", // connecting | ready | none | readonly
     filters: { ...DEFAULT_FILTERS },
@@ -325,7 +339,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   function classify(position, company) {
     const p = (position || "").toLowerCase(), c = (company || "").toLowerCase(), s = p + " | " + c;
     if (!/assurance|audit|\btax\b|accountant/.test(p) && (/\b(attorney|counsel|lawyer|paralegal|legal)\b/.test(s) || /\blaw\b/.test(p) || (/\b(llp|pllc|law|p\.?c\.?)$|\b(llp|pllc|law)\b/.test(c) && /partner|associate|counsel|shareholder/.test(p)))) return "law";
-    if (/recruit|talent|executive search|headhunt|staffing|\bsearch partners\b/.test(s) || /\bsearch\b/.test(c) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors|hirewell|\bgpac\b|options group|selby jennings|michael page|kforce|teksystems|insight global/.test(c)) return "recruiters";
+    if (/recruit|talent|executive search|headhunt|staffing|\bsearch partners\b/.test(s) || /\bsearch\b/.test(c) || /ferguson partners|heidrick|korn ferry|cel (&|and) associates|russell reynolds|spencer stuart|crown advisors|hirewell|\bgpac\b|options group|selby jennings|michael page|kforce|teksystems|insight global|rets associates|jackson lucas|gillham|calibre one|liberty group|keller augusta|mhw search|sighthound|advance search|revalorize|high country/.test(c)) return "recruiters";
     if (/capital markets|debt (&|and) equity|debt placement|equity placement|structured finance|mortgage bank/.test(s) || /walker ?(&|and) ?dunlop|berkadia|eastdil|northmarq|greystone|hff\b/.test(c)) return "capmkts";
     if (/leasing consultant|leasing professional|leasing agent|community manag|property manag|regional manag|regional property|maintenance|\bresident\b/.test(p)) return "pm";
     if (/\b(lend|lending|lender|loan|loans|originat\w*|credit|underwrit\w*|banker|banking|relationship manager)\b/.test(p) || ((/\bbank\b|bancorp|credit union|debt fund|lending/.test(c) || LENDER_FIRMS.test(c)) && !NOT_RE_ROLE.test(p))) return "lending";
@@ -362,11 +376,14 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     if (/\b(director|vp|avp|head)\b/.test(r)) return "senior";
     return "mid";
   }
-  function fitScore(c) {
+  // Learning-first: favors parts of the market you have few tiered people in, DFW, and people you already know.
+  function tieredCounts() { const m = new Map(); for (const c of S.contacts.values()) if (CADENCE[c.tier]) m.set(c.fn, (m.get(c.fn) || 0) + 1); return m; }
+  function fitScore(c, thin) {
     const r = regionOf(c), lv = levelOf(c);
-    let s = (FN_WEIGHT[c.fn] ?? 0) + LEVEL_PTS[lv] * 1.5 + (STRENGTH_PTS[c.strength || ""] || 0);
+    let s = (FN_WEIGHT[c.fn] ?? 0) + LEVEL_PTS[lv] + (STRENGTH_PTS[c.strength || ""] || 0);
     if (r === "dfw") s += 3; else if (r === "texas") s += 1;
-    if (c.side === "internal") s += (["am", "acquisitions", "capmkts", "investors"].includes(c.fn) || lv === "exec") ? 3 : 1;
+    if (c.side === "internal") s += 1;
+    if (thin && c.fn !== "other" && (thin.get(c.fn) || 0) < 3) s += 1.5;
     return s;
   }
   const connTs = (c) => Date.parse(c.connectedOn || "") || 0;
@@ -383,7 +400,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   function sortList(list, how) {
     const rank = { inner: 0, core: 1, wide: 2, none: 3, skip: 4 };
     const byName = (a, b) => fullName(a).localeCompare(fullName(b));
-    if (how === "fit") { const m = new Map(list.map((c) => [c.id, fitScore(c)])); return list.sort((a, b) => (m.get(b.id) - m.get(a.id)) || byName(a, b)); }
+    if (how === "fit") { const thin = tieredCounts(); const m = new Map(list.map((c) => [c.id, fitScore(c, thin)])); return list.sort((a, b) => (m.get(b.id) - m.get(a.id)) || byName(a, b)); }
     if (how === "level") return list.sort((a, b) => (LEVEL_PTS[levelOf(b)] - LEVEL_PTS[levelOf(a)]) || byName(a, b));
     if (how === "recent") return list.sort((a, b) => (connTs(b) - connTs(a)) || byName(a, b));
     if (how === "name") return list.sort(byName);
@@ -409,7 +426,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   const active = () => [...S.contacts.values()].filter((c) => CADENCE[c.tier]);
   function allTouches() {
     const out = [];
-    for (const c of S.contacts.values()) for (const t of c.touches || []) out.push({ ...t, c });
+    for (const c of S.contacts.values()) (c.touches || []).forEach((t, i) => out.push({ ...t, c, i }));
     return out;
   }
 
@@ -481,6 +498,9 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     db.collection("wins").orderBy("order").onSnapshot((s) => {
       S.wins = s.docs.map((d) => ({ ...clone(d.data()), id: d.id })); render(); if (S.open) renderDrawer();
     }, (e) => console.error(e));
+    db.collection("questions").orderBy("order").onSnapshot((s) => {
+      S.questions = s.docs.map((d) => ({ ...clone(d.data()), id: d.id })); render(); if (S.open) renderDrawer();
+    }, (e) => console.error(e));
     db.collection("milestones").orderBy("order").onSnapshot((s) => {
       S.milestones = s.docs.map((d) => ({ ...clone(d.data()), id: d.id })); render();
     }, (e) => console.error(e));
@@ -494,19 +514,18 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   function renderTabs() {
     const untriaged = [...S.contacts.values()].filter((c) => (c.tier || "none") === "none").length;
     const overdue = active().filter((c) => { const i = dueInfo(c); return i && i.d <= 0; }).length;
-    const tabs = [["week", "This week", overdue], ["people", "People", 0], ["triage", "Triage", untriaged], ["wins", "Wins", 0], ["plan", "Plan", 0], ["import", "Import & setup", 0]];
+    const tabs = [["week", "This week", overdue], ["people", "People", 0], ["triage", "Triage", untriaged], ["learn", "Learning", 0], ["plan", "Plan", 0], ["wins", "Projects", 0], ["import", "Import & setup", 0]];
     $("#tabs").innerHTML = tabs.map(([k, l, n]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${n ? `<span class="badge">${n}</span>` : ""}</button>`).join("");
   }
 
   function render() {
     renderTabs();
-    const weeks = Math.max(0, Math.ceil(daysBetween(today(), S.settings.targetDate || "2027-12-15") / 7));
-    $("#goal").innerHTML = `Goal: <b>Director of Asset Management</b> · <span class="num">${weeks}</span> weeks to target`;
+    $("#goal").innerHTML = `Goal: <b>${esc(S.settings.goal || DEFAULT_GOAL)}</b>`;
     const m = $("#main");
     let notice = "";
     if (S.dbState === "none") notice = `<div class="notice">Open this page in claude.ai while signed in to load and save your tracker. Nothing here will be saved until then.</div>`;
     if (S.dbState === "readonly") notice = `<div class="notice">You can view this tracker, but changes from this view are not being saved.</div>`;
-    const views = { week: viewWeek, people: viewPeople, triage: viewTriage, wins: viewWins, plan: viewPlan, import: viewImport };
+    const views = { week: viewWeek, people: viewPeople, triage: viewTriage, learn: viewLearn, wins: viewWins, plan: viewPlan, import: viewImport };
     // Keep focus and caret in the search box across re-renders.
     const ae = document.activeElement; const fid = ae && ae.id && m.contains(ae) ? ae.id : null;
     const sel = fid && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
@@ -542,15 +561,17 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     const act = active();
     const due = act.map((c) => ({ c, i: dueInfo(c) })).filter((x) => x.i && x.i.d <= 7).sort((a, b) => (a.i.d - b.i.d) || (a.c.tier === "inner" ? -1 : 1));
     const overdue = due.filter((x) => x.i.d < 0 || !x.c.lastTouch).length;
-    const sponsors = [...S.contacts.values()].filter((c) => c.role === "sponsor").length;
+    const monthLessons = touches.filter((x) => (x.n || "").trim() && monthKey(x.d) === mk);
+    const filed = monthLessons.filter((x) => x.q && S.questions.some((q) => q.id === x.q)).length;
     const owe = [...S.contacts.values()].filter((c) => (c.owe || "").trim());
     const cov = {}; COVERAGE.forEach((f) => (cov[f] = 0));
     touches.filter((x) => x.t !== "note" && monthKey(x.d) === mk && x.c.side !== "internal" && cov[x.c.fn] !== undefined).forEach((x) => cov[x.c.fn]++);
     const covered = COVERAGE.filter((f) => cov[f] > 0).length;
-    const nextMs = S.milestones.filter((m) => !m.done).slice(0, 3);
+    const trackRank = (m) => ((m.track || "promotion") === "learning" ? 0 : 1);
+    const nextMs = S.milestones.filter((m) => !m.done).sort((a, b) => (trackRank(a) - trackRank(b)) || a.due.localeCompare(b.due) || (a.order - b.order)).slice(0, 3);
 
     if (!S.contacts.size) {
-      return `<section><p class="lede">Your network, organized around one goal.</p>
+      return `<section><p class="lede">Learn something from everyone you know.</p>
         <p class="hint" style="max-width:60ch;margin-top:10px">Import your LinkedIn connections, sort the people who matter into tiers, and this page will tell you who to call this week, which parts of the market you haven't heard from lately, and what you owe people.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button class="btn primary" data-tab="import">${ICON.upload} Import connections</button><button class="btn" data-action="new-contact">${ICON.plus} Add a person</button></div></section>
         ${planPreview(nextMs)}`;
@@ -560,7 +581,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
         <div class="stat ${thisWeek.length >= target ? "good" : ""}"><span class="k">Conversations this week</span><span class="v num">${thisWeek.length}<small> / ${target}</small></span><span class="s">${wInt} internal · ${wExt} external</span>
           <div class="spark" aria-label="Conversations per week, last 10 weeks">${spark.map((x) => `<span class="${x.cur ? "cur" : x.n >= target ? "hit" : ""}" style="height:${Math.max(6, (x.n / maxN) * 100)}%" title="${x.n}"></span>`).join("")}</div></div>
         <div class="stat ${overdue ? "alert" : ""}"><span class="k">Overdue</span><span class="v num">${overdue}</span><span class="s">${act.length} people in your tiers</span></div>
-        <div class="stat ${sponsors >= 2 ? "good" : ""}"><span class="k">Sponsors</span><span class="v num">${sponsors}<small> / 2</small></span><span class="s">${sponsors >= 2 ? "Both seats filled" : "Mark them in a contact's role"}</span></div>
+        <div class="stat ${monthLessons.length ? "good" : ""}"><span class="k">Lessons this month</span><span class="v num">${monthLessons.length}</span><span class="s">${filed} filed under a question</span></div>
         <div class="stat"><span class="k">Market coverage</span><span class="v num">${covered}<small> / ${COVERAGE.length}</small></span><span class="s">Functions heard from this month</span></div>
       </section>
       <section><div class="sec-head"><h2 class="sec-title">Coverage this month</h2><span class="hint">External conversations by function</span></div>
@@ -620,7 +641,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     const tiered = active().length;
     return `<section>
       <div class="sec-head"><div><h2 class="lede" style="font-size:24px">Sort the people who matter.</h2>
-        <p class="hint" style="margin-top:6px;max-width:64ch">Inner circle: monthly contact (boss, sponsors, key lenders and AM directors). Core: quarterly. Wide: twice a year. "Not now" hides someone from this list. Aim for about 15 inner, 40–50 core.</p></div>
+        <p class="hint" style="margin-top:6px;max-width:64ch">Inner circle: the 15 or so people you learn the most from, every month. Mix levels: people well above you, peers, and a few earlier in their careers. Core: quarterly. Wide: twice a year. "Not now" hides someone from this list.</p></div>
         <span class="hint num">${tiered} tiered · ${counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0} to sort</span></div>
       <div class="coverage" style="margin-bottom:14px">
         <button class="cov ${!S.triageFn ? "on" : ""}" data-tfn="">All</button>
@@ -645,8 +666,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
   function viewWins() {
     const people = [...S.contacts.values()];
     return `<section>
-      <div class="sec-head"><div><h2 class="lede" style="font-size:24px">Director-level wins.</h2><p class="hint" style="margin-top:6px;max-width:64ch">Pick two or three. Link the lenders, brokers and lawyers who help with each one, and record the outcome in numbers. These become your promotion case.</p></div>
-        <button class="btn" data-action="new-win">${ICON.plus} Add a win</button></div>
+      <div class="sec-head"><div><h2 class="lede" style="font-size:24px">Hands-on projects.</h2><p class="hint" style="margin-top:6px;max-width:64ch">The deals and decisions you want to get your hands on. Link the lenders, brokers and lawyers who help with each one and record what came of it. If you go for a promotion later, these become your case.</p></div>
+        <button class="btn" data-action="new-win">${ICON.plus} Add a project</button></div>
       <div class="cards">${S.wins.length ? S.wins.map((w) => {
         const linked = people.filter((c) => c.winId === w.id);
         return `<div class="card ${w.status === "done" ? "done" : ""}">
@@ -659,16 +680,21 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
           <div><div class="sec-title" style="margin-bottom:6px">People helping</div><div class="people">${linked.length ? linked.map((c) => `<button class="pill" data-open="${esc(c.id)}" style="cursor:pointer">${esc(fullName(c))}</button>`).join("") : `<span class="hint">Link people from their contact page.</span>`}</div></div>
           <div class="foot"><span></span><button class="btn ghost sm danger" data-delwin="${esc(w.id)}">Remove</button></div>
         </div>`;
-      }).join("") : `<div class="empty" style="grid-column:1/-1"><span class="serif">No wins yet.</span>Add the two or three results that will prove you're ready.</div>`}</div>
+      }).join("") : `<div class="empty" style="grid-column:1/-1"><span class="serif">No projects yet.</span>Add the deals or decisions you want to learn by doing.</div>`}</div>
     </section>`;
   }
 
   function viewPlan() {
     const t = monthKey(today());
-    const groups = [1, 2, 3, 4].map((p) => ({ p, items: S.milestones.filter((m) => Number(m.phase) === p) }));
-    if (!S.milestones.length) return `<div class="empty"><span class="serif">No plan yet.</span>Milestones will appear here.</div>`;
-    return `<section>${groups.map(({ p, items }) => {
-      const [title, when, from, to] = PHASES[p];
+    const track = S.planTrack;
+    const phases = track === "learning" ? LEARN_PHASES : PHASES;
+    const mine = S.milestones.filter((m) => (m.track || "promotion") === track);
+    const groups = [1, 2, 3, 4].map((p) => ({ p, items: mine.filter((m) => Number(m.phase) === p) }));
+    const toggle = `<div class="sec-head"><div class="seg" role="group" aria-label="Plan"><button class="${track === "learning" ? "on" : ""}" data-track="learning">Learning plan</button><button class="${track === "promotion" ? "on" : ""}" data-track="promotion">Promotion track</button></div>
+      <span class="hint">${track === "learning" ? "One part of the market each quarter. Questions for each live in the Learning tab." : "Kept in the background. The boss conversation is worth having either way."}</span></div>`;
+    if (!mine.length) return `${toggle}<div class="empty"><span class="serif">No plan yet.</span>Milestones will appear here.</div>`;
+    return `<section>${toggle}${groups.map(({ p, items }) => {
+      const [title, when, from, to] = phases[p];
       const done = items.filter((m) => m.done).length;
       const now = t >= from && t <= to;
       return `<div class="phase ${now ? "now" : ""}">
@@ -676,6 +702,34 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
         <div>${items.map((m) => `<label class="ms ${m.done ? "done" : ""} ${!m.done && m.due < t ? "late" : ""}"><input type="checkbox" data-ms="${esc(m.id)}" ${m.done ? "checked" : ""}><span class="t">${esc(m.title)}</span><span class="d">${esc(fmtMonth(m.due))}</span></label>`).join("")}</div>
       </div>`;
     }).join("")}</section>`;
+  }
+
+  function viewLearn() {
+    const lessons = allTouches().filter((x) => (x.n || "").trim());
+    const qIds = new Set(S.questions.map((q) => q.id));
+    const byQ = new Map();
+    lessons.forEach((x) => { if (x.q && qIds.has(x.q)) { if (!byQ.has(x.q)) byQ.set(x.q, []); byQ.get(x.q).push(x); } });
+    const unfiled = lessons.filter((x) => !x.q || !qIds.has(x.q)).sort((a, b) => b.d.localeCompare(a.d));
+    const groups = FNS.filter(([k]) => k !== "other").map(([k, l]) => ({ k, l, qs: S.questions.filter((q) => q.fn === k) })).filter((g) => g.qs.length);
+    const lessonRow = (x) => `<div class="lesson"><div class="by">${esc(fmtDate(x.d))} · <button data-open="${esc(x.c.id)}">${esc(fullName(x.c))}</button>${x.c.company ? `, ${esc(x.c.company)}` : ""}</div>${esc(x.n)}</div>`;
+    const qOptions = [["", "File under…"], ...S.questions.map((q) => [q.id, `${FN[q.fn] || ""}: ${(q.text || "Untitled").slice(0, 60)}`])];
+    return `<div class="two">
+      <section>
+        <div class="sec-head"><div><h2 class="lede" style="font-size:24px">What you're learning.</h2>
+          <p class="hint" style="margin-top:6px;max-width:60ch">The questions you're trying to answer in each part of the market. Every lesson you log can be filed under one, so your notes build up by topic.</p></div></div>
+        <div class="filters"><select id="nq-fn" aria-label="Part of the market">${opts(FNS.filter(([k]) => k !== "other"), "lending")}</select><button class="btn" data-action="add-q">${ICON.plus} Add a question</button></div>
+        ${groups.length ? groups.map((g) => `<div class="qgroup"><div class="sec-head"><h3 class="sec-title">${esc(g.l)}</h3><button class="btn ghost sm" data-cov="${g.k}">People in ${esc(g.l.toLowerCase())}</button></div>
+          <div class="cards" style="grid-template-columns:1fr">${g.qs.map((q) => { const ls = (byQ.get(q.id) || []).sort((a, b) => b.d.localeCompare(a.d)); return `<div class="card">
+            <textarea class="wtitle" id="qt-${esc(q.id)}" data-q="${esc(q.id)}" rows="2" placeholder="What do you want to understand?" aria-label="Question">${esc(q.text || "")}</textarea>
+            <div class="lessons">${ls.length ? ls.map(lessonRow).join("") : `<span class="hint">No lessons filed yet. Ask this at your next ${esc(g.l.toLowerCase())} lunch.</span>`}</div>
+            <div class="foot"><span class="hint num">${ls.length} ${ls.length === 1 ? "lesson" : "lessons"}</span><button class="btn ghost sm danger" data-delq="${esc(q.id)}">Remove</button></div>
+          </div>`; }).join("")}</div></div>`).join("") : `<div class="empty"><span class="serif">No questions yet.</span>Add the first thing you want to understand.</div>`}
+      </section>
+      <section>
+        <div class="sec-head"><h2 class="sec-title">Unfiled lessons</h2><span class="hint num">${unfiled.length}</span></div>
+        <div class="panel lessons">${unfiled.length ? unfiled.slice(0, 40).map((x) => `${lessonRow(x)}<select data-fileq="${esc(x.c.id)}|${x.i}" aria-label="File this lesson">${opts(qOptions, "")}</select>`).join("") : `<span class="hint">Lessons you log from a contact's page show up here until you file them under a question.</span>`}</div>
+      </section>
+    </div>`;
   }
 
   function viewImport() {
@@ -700,10 +754,11 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
       <section>
         <div class="sec-head"><h2 class="sec-title">Setup</h2></div>
         <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+          <label class="f">Your goal<input type="text" id="s-goal" value="${esc(S.settings.goal || "")}" placeholder="${esc(DEFAULT_GOAL)}"></label>
           <label class="f">Your firm (marks colleagues as internal)<input type="text" id="s-firm" value="${esc(S.settings.firm || "")}" placeholder="e.g. Greystar"></label>
           <div class="grid2">
             <label class="f">Conversations per week<input type="number" id="s-target" min="1" max="15" value="${esc(S.settings.weeklyTarget || 3)}"></label>
-            <label class="f">Promotion target date<input type="date" id="s-date" value="${esc(S.settings.targetDate || "")}"></label>
+            <label class="f">Promotion target (optional)<input type="date" id="s-date" value="${esc(S.settings.targetDate || "")}"></label>
           </div>
           <p class="hint" style="margin:0">Cadence: inner circle every 30 days, core every 90, wide every 180.</p>
         </div>
@@ -737,11 +792,12 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
           <label class="f">Tier<select data-c="tier">${opts(TIERS, c.tier || "none")}</select></label>
           <label class="f">Function<select data-c="fn">${opts(FNS, c.fn)}</select></label>
           <label class="f">Internal or external<select data-c="side">${opts([["external", "External"], ["internal", "Internal"]], c.side || "external")}</select></label>
-          <label class="f">Role in your promotion<select data-c="role">${opts(ROLES, c.role || "")}</select></label>
+          <label class="f">Promotion role (optional)<select data-c="role">${opts(ROLES, c.role || "")}</select></label>
           <label class="f">Region<select data-c="region">${opts([["", `Auto: ${REGION[regionOf({ ...c, region: "" })]}`], ...REGIONS], c.region || "")}</select></label>
           <label class="f">How well you know them<select data-c="strength">${opts(STRENGTHS, c.strength || "")}</select></label>
         </div>
         <label class="f">Linked win<select data-c="winId">${opts([["", "None"], ...S.wins.map((w) => [w.id, w.title])], c.winId || "")}</select></label>
+        <label class="f">What I can learn from them<textarea data-c="learn" placeholder="e.g. How lenders are sizing multifamily loans right now">${esc(c.learn || "")}</textarea></label>
         <label class="f">What they care about<textarea data-c="cares" placeholder="Their deals, their problems, what they're trying to get done">${esc(c.cares || "")}</textarea></label>
         <label class="f">I owe them<input type="text" data-c="owe" value="${esc(c.owe || "")}" placeholder="e.g. Send lease comps for the Frisco asset"></label>
         <label class="f">Notes<textarea data-c="notes">${esc(c.notes || "")}</textarea></label>
@@ -753,8 +809,9 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
             <input type="text" id="t-note" placeholder="What did you learn?" aria-label="Note">
             <button class="btn primary" data-action="add-touch">Log</button>
           </div>
+          ${S.questions.length ? `<select id="t-q" aria-label="File the lesson under a question" style="margin-top:8px;width:100%">${opts([["", "File the lesson under a question (optional)"], ...S.questions.map((q) => [q.id, `${FN[q.fn] || ""}: ${(q.text || "Untitled").slice(0, 70)}`])], "")}</select>` : ""}
         </div>
-        <div class="touches">${touches.length ? touches.map((t) => `<div class="touch"><div class="when">${esc(fmtDate(t.d))} · ${esc(TOUCH[t.t] || t.t)} <button class="btn ghost sm" data-deltouch="${t.i}" aria-label="Remove this entry" style="padding:0 4px">${ICON.x}</button></div>${t.n ? `<div class="what">${esc(t.n)}</div>` : ""}</div>`).join("") : `<div class="touch"><div class="when">No touches logged yet.</div></div>`}</div>
+        <div class="touches">${touches.length ? touches.map((t) => `<div class="touch"><div class="when">${esc(fmtDate(t.d))} · ${esc(TOUCH[t.t] || t.t)} <button class="btn ghost sm" data-deltouch="${t.i}" aria-label="Remove this entry" style="padding:0 4px">${ICON.x}</button></div>${t.n ? `<div class="what">${esc(t.n)}</div>` : ""}${t.q && S.questions.find((q) => q.id === t.q) ? `<div class="when">Filed under: ${esc((S.questions.find((q) => q.id === t.q).text || "").slice(0, 80))}</div>` : ""}</div>`).join("") : `<div class="touch"><div class="when">No touches logged yet.</div></div>`}</div>
         <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center" id="del-wrap"><button class="btn ghost sm danger" data-action="ask-delete">Delete contact</button></div>
       </div>`;
   }
@@ -764,7 +821,7 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 
   function newContact() {
     const id = "m-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const c = { key: id, first: "", last: "", company: "", position: "", url: "", email: "", connectedOn: "", fn: "other", fnAuto: false, side: "external", tier: "core", role: "", cares: "", owe: "", notes: "", winId: "", touches: [], lastTouch: "", source: "manual", createdAt: today() };
+    const c = { key: id, first: "", last: "", company: "", position: "", url: "", email: "", connectedOn: "", fn: "other", fnAuto: false, side: "external", tier: "core", role: "", learn: "", region: "", strength: "", cares: "", owe: "", notes: "", winId: "", touches: [], lastTouch: "", source: "manual", createdAt: today() };
     S.contacts.set(id, { ...c, id });
     setDoc("contacts/" + id, c);
     openDrawer(id);
@@ -773,8 +830,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 
   function addTouch() {
     const c = S.contacts.get(S.open); if (!c) return;
-    const d = $("#t-date").value || today(), t = $("#t-type").value, n = $("#t-note").value.trim();
-    const touches = [...(c.touches || []), { d, t, n }];
+    const d = $("#t-date").value || today(), t = $("#t-type").value, n = $("#t-note").value.trim(), q = $("#t-q")?.value || "";
+    const touches = [...(c.touches || []), q ? { d, t, n, q } : { d, t, n }];
     const lastTouch = touches.reduce((m, x) => (x.d > m ? x.d : m), "");
     saveContact(c.id, { touches, lastTouch });
     renderDrawer(); toast(`Logged ${TOUCH[t].toLowerCase()} with ${c.first || fullName(c)}`);
@@ -864,18 +921,25 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
 
   function saveSettings(patch) {
     S.settings = { ...S.settings, ...patch };
-    if (db) setDoc("settings/main", { firm: S.settings.firm || "", weeklyTarget: Number(S.settings.weeklyTarget) || 3, targetDate: S.settings.targetDate || "2027-12-15" });
+    if (db) setDoc("settings/main", { firm: S.settings.firm || "", weeklyTarget: Number(S.settings.weeklyTarget) || 3, targetDate: S.settings.targetDate || "2027-12-15", goal: S.settings.goal || "" });
   }
 
   // ---------- Events ----------
   document.addEventListener("click", (e) => {
-    const el = e.target.closest("[data-tab],[data-open],[data-action],[data-tier],[data-tfn],[data-cov],[data-delwin],[data-deltouch],[data-dfw]");
+    const el = e.target.closest("[data-tab],[data-open],[data-action],[data-tier],[data-tfn],[data-cov],[data-delwin],[data-deltouch],[data-dfw],[data-track],[data-delq]");
     if (!el) { if (e.target.id === "scrim") closeDrawer(); return; }
     if (el.dataset.tier && el.dataset.cid) {
       const c = S.contacts.get(el.dataset.cid);
       saveContact(el.dataset.cid, { tier: el.dataset.tier });
       toast(el.dataset.tier === "skip" ? `${fullName(c)} hidden for now` : `${fullName(c)} → ${TIER[el.dataset.tier]}`);
       render(); return;
+    }
+    if (el.dataset.track) { S.planTrack = el.dataset.track; render(); return; }
+    if (el.dataset.delq) {
+      const id = el.dataset.delq;
+      if (el.dataset.confirm) { S.questions = S.questions.filter((q) => q.id !== id); deleteDoc("questions/" + id); render(); }
+      else { el.dataset.confirm = "1"; el.textContent = "Click again to remove"; }
+      return;
     }
     if (el.dataset.tab) { if (S.open) closeDrawer(); setTab(el.dataset.tab); return; }
     if (el.dataset.open) { openDrawer(el.dataset.open); return; }
@@ -895,6 +959,12 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     else if (a === "new-win") newWin();
     else if (a === "more") { S.limit += 200; render(); }
     else if (a === "reset-filters") { S.filters = { ...DEFAULT_FILTERS }; render(); }
+    else if (a === "add-q") {
+      const fn = $("#nq-fn")?.value || "lending", id = "q-" + Date.now().toString(36);
+      const order = S.questions.reduce((m, q) => Math.max(m, q.order || 0), 0) + 1;
+      S.questions = [...S.questions, { id, fn, text: "", order }]; setDoc("questions/" + id, { fn, text: "", order }); render();
+      setTimeout(() => document.getElementById("qt-" + id)?.focus(), 30);
+    }
     else if (a === "add-touch") addTouch();
     else if (a === "ask-delete") {
       $("#del-wrap").innerHTML = `<span class="hint">Delete ${esc(fullName(S.contacts.get(S.open)))} and their history?</span><button class="btn sm" data-action="cancel-delete">Keep</button><button class="btn sm danger" data-action="confirm-delete">Delete</button>`;
@@ -917,6 +987,8 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     }
     if (t.dataset.win && (t.type === "text" || t.tagName === "TEXTAREA")) { const id = t.dataset.win, f = t.dataset.field, v = t.value; const w = S.wins.find((x) => x.id === id); if (w) w[f] = v; debounced("w" + id + f, () => updateDoc("wins/" + id, { [f]: v })); return; }
     if (t.id === "s-firm") debounced("firm", () => saveSettings({ firm: t.value.trim() }), 700);
+    if (t.id === "s-goal") { debounced("goal", () => { saveSettings({ goal: t.value.trim() }); $("#goal").innerHTML = `Goal: <b>${esc(S.settings.goal || DEFAULT_GOAL)}</b>`; }, 600); return; }
+    if (t.dataset.q) { const id = t.dataset.q, v = t.value; const q = S.questions.find((x) => x.id === id); if (q) q.text = v; debounced("q" + id, () => updateDoc("questions/" + id, { text: v })); return; }
   });
   document.addEventListener("change", (e) => {
     const t = e.target;
@@ -925,6 +997,12 @@ label.f > input, label.f > select, label.f > textarea { text-transform: none; le
     if (t.dataset.c && S.open && t.tagName === "SELECT") {
       const patch = { [t.dataset.c]: t.value }; if (t.dataset.c === "fn") patch.fnAuto = false;
       saveContact(S.open, patch); renderDrawer(); return;
+    }
+    if (t.dataset.fileq) {
+      if (!t.value) return;
+      const [cid, idx] = t.dataset.fileq.split("|"); const c = S.contacts.get(cid); if (!c) return;
+      const touches = clone(c.touches || []); if (!touches[Number(idx)]) return;
+      touches[Number(idx)].q = t.value; saveContact(cid, { touches }); toast("Lesson filed"); render(); return;
     }
     if (t.dataset.tfnset) { saveContact(t.dataset.tfnset, { fn: t.value, fnAuto: false }); return; }
     if (t.dataset.ms) { const m = S.milestones.find((x) => x.id === t.dataset.ms); if (m) { m.done = t.checked; updateDoc("milestones/" + m.id, { done: t.checked }); if (t.checked) toast("Milestone done"); render(); } return; }
